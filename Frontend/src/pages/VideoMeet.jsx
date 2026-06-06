@@ -309,15 +309,33 @@ export default function VideoMeetComponent() {
                 clients.forEach((socketListId) => {
 
                     connections[socketListId] = new RTCPeerConnection(peerConfigConnections)
+                    
+                    // Log connection state changes
+                    connections[socketListId].onconnectionstatechange = () => {
+                        console.log(`Connection State with ${socketListId}:`, connections[socketListId].connectionState)
+                    }
+                    
+                    // Log ICE gathering state
+                    connections[socketListId].onicegatheringstatechange = () => {
+                        console.log(`ICE Gathering State with ${socketListId}:`, connections[socketListId].iceGatheringState)
+                    }
+                    
+                    // Log ICE connection state
+                    connections[socketListId].oniceconnectionstatechange = () => {
+                        console.log(`ICE Connection State with ${socketListId}:`, connections[socketListId].iceConnectionState)
+                    }
+                    
                     // Wait for their ice candidate       
                     connections[socketListId].onicecandidate = function (event) {
                         if (event.candidate != null) {
+                            console.log(`ICE Candidate from ${socketListId}:`, event.candidate)
                             socketRef.current.emit('signal', socketListId, JSON.stringify({ 'ice': event.candidate }))
                         }
                     }
 
-                    // Wait for their video stream (modern approach using ontrack)
-                    connections[socketListId].ontrack = (event) => {
+                    // Wait for their video stream
+                    connections[socketListId].onaddstream = (event) => {
+                        console.log("Stream received from:", socketListId);
                         console.log("BEFORE:", videoRef.current);
                         console.log("FINDING ID: ", socketListId);
 
@@ -329,7 +347,7 @@ export default function VideoMeetComponent() {
                             // Update the stream of the existing video
                             setVideos(videos => {
                                 const updatedVideos = videos.map(video =>
-                                    video.socketId === socketListId ? { ...video, stream: event.streams[0] } : video
+                                    video.socketId === socketListId ? { ...video, stream: event.stream } : video
                                 );
                                 videoRef.current = updatedVideos;
                                 return updatedVideos;
@@ -339,7 +357,7 @@ export default function VideoMeetComponent() {
                             console.log("CREATING NEW");
                             let newVideo = {
                                 socketId: socketListId,
-                                stream: event.streams[0],
+                                stream: event.stream,
                                 autoplay: true,
                                 playsinline: true
                             };
@@ -356,6 +374,7 @@ export default function VideoMeetComponent() {
                     // Add the local video stream
                     if (window.localStream !== undefined && window.localStream !== null) {
                         connections[socketListId].addStream(window.localStream)
+                        console.log("Stream added to connection:", socketListId)
                     } else {
                         let blackSilence = (...args) => new MediaStream([black(...args), silence()])
                         window.localStream = blackSilence()
@@ -369,15 +388,16 @@ export default function VideoMeetComponent() {
 
                         try {
                             connections[id2].addStream(window.localStream)
-                        } catch (e) { }
+                        } catch (e) { console.log("Error adding stream:", e) }
 
                         connections[id2].createOffer().then((description) => {
                             connections[id2].setLocalDescription(description)
                                 .then(() => {
+                                    console.log("Offer created and set for:", id2)
                                     socketRef.current.emit('signal', id2, JSON.stringify({ 'sdp': connections[id2].localDescription }))
                                 })
-                                .catch(e => console.log(e))
-                        })
+                                .catch(e => console.log("Error setting local description:", e))
+                        }).catch(e => console.log("Error creating offer:", e))
                     }
                 }
             })
@@ -554,6 +574,8 @@ export default function VideoMeetComponent() {
                                         }
                                     }}
                                     autoPlay
+                                    playsInline
+                                    muted={false}
                                 >
                                 </video>
                             </div>
